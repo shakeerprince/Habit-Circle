@@ -33,6 +33,11 @@ habitsRoute.post('/', async (c) => {
     const userId = c.get('userId' as never) as string;
     const body = await c.req.json();
     const id = randomUUID();
+    
+    // Ensure colorValue fits in a 32-bit signed integer for Postgres
+    const rawColor = body.colorValue !== undefined ? body.colorValue : 0xFFC8E600;
+    const safeColor = rawColor | 0;
+
     await db.insert(schema.habits).values({
         id, name: body.name, category: body.category || 'Custom',
         startHour: body.startHour ?? 6, startMinute: body.startMinute ?? 0,
@@ -40,7 +45,7 @@ habitsRoute.post('/', async (c) => {
         daysOfWeek: (body.daysOfWeek || [1, 2, 3, 4, 5, 6, 7]).join(','),
         frequency: body.frequency || 'Daily',
         reminderEnabled: body.reminderEnabled ?? true,
-        colorValue: body.colorValue || 0xFFC8E600,
+        colorValue: safeColor,
         createdAt: new Date().toISOString(),
         userId,
     });
@@ -133,6 +138,36 @@ habitsRoute.get('/entries', async (c) => {
     const entries = await db.select().from(schema.habitEntries)
         .where(eq(schema.habitEntries.date, date));
     return c.json(entries);
+});
+
+// GET /api/habits/heatmap
+habitsRoute.get('/heatmap', async (c) => {
+    const userId = c.get('userId' as never) as string;
+    
+    const userHabits = await db.select({ id: schema.habits.id }).from(schema.habits).where(eq(schema.habits.userId, userId));
+    const habitIds = userHabits.map(h => h.id);
+    
+    if (habitIds.length === 0) return c.json({});
+
+    const { inArray } = await import('drizzle-orm');
+    
+    const entries = await db.select({
+        date: schema.habitEntries.date,
+    })
+    .from(schema.habitEntries)
+    .where(
+        and(
+            inArray(schema.habitEntries.habitId, habitIds),
+            eq(schema.habitEntries.status, 'completed')
+        )
+    );
+
+    const heatmap: Record<string, number> = {};
+    for (const e of entries) {
+        heatmap[e.date] = (heatmap[e.date] || 0) + 1;
+    }
+
+    return c.json(heatmap);
 });
 
 export default habitsRoute;

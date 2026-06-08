@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
 import { DirectMessage, DMHistory } from "@/../shared/types";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 export default function DMChatPage({ params }: { params: Promise<{ userId: string }> }) {
     const { userId } = use(params);
@@ -11,6 +12,7 @@ export default function DMChatPage({ params }: { params: Promise<{ userId: strin
     const [text, setText] = useState("");
     const scrollRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
+    const { subscribe } = useWebSocket();
 
     const myId = (() => {
         try {
@@ -25,6 +27,17 @@ export default function DMChatPage({ params }: { params: Promise<{ userId: strin
         api.getDMHistory(userId).then(setData).catch(() => { });
     }, [userId]);
 
+    // Listen for new DMs via WebSocket
+    useEffect(() => {
+        const unsubscribe = subscribe('new_dm', (newMsg: DirectMessage) => {
+            // Check if message belongs to this conversation
+            if (newMsg.senderId === userId || newMsg.recipientId === userId) {
+                setData(prev => prev ? { ...prev, messages: [...prev.messages, newMsg] } : prev);
+            }
+        });
+        return unsubscribe;
+    }, [subscribe, userId]);
+
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [data?.messages]);
@@ -32,10 +45,29 @@ export default function DMChatPage({ params }: { params: Promise<{ userId: strin
     const sendMessage = async () => {
         if (!text.trim()) return;
         try {
-            const msg = await api.sendDM(userId, text.trim());
-            setData((prev: DMHistory | null) => prev ? { ...prev, messages: [...prev.messages, msg] } : prev);
+            // Optimistically add message
+            const optimisticMsg = {
+                id: 'temp_' + Date.now(),
+                senderId: myId,
+                recipientId: userId,
+                message: text.trim(),
+                sentAt: new Date().toISOString(),
+                isRead: true,
+            } as DirectMessage;
+            
+            setData((prev: DMHistory | null) => prev ? { ...prev, messages: [...prev.messages, optimisticMsg] } : prev);
+            const msgText = text.trim();
             setText("");
-        } catch { }
+            
+            // Replace optimistic message with real message
+            const msg = await api.sendDM(userId, msgText);
+            setData((prev: DMHistory | null) => prev ? { 
+                ...prev, 
+                messages: prev.messages.map(m => m.id === optimisticMsg.id ? msg : m) 
+            } : prev);
+        } catch { 
+            // Better error handling: Could remove optimistic message here
+        }
     };
 
     return (

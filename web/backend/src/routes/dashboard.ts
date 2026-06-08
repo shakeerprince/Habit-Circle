@@ -193,4 +193,75 @@ dashboard.get('/', async (c) => {
     }
 });
 
+// GET /api/dashboard/stats
+dashboard.get('/stats', async (c) => {
+    try {
+        const userId = c.get('userId' as never) as string;
+
+        // 1. Habits by category
+        const habits = await db.select().from(schema.habits).where(eq(schema.habits.userId, userId));
+        const categories: Record<string, number> = {};
+        for (const h of habits) {
+            categories[h.category] = (categories[h.category] || 0) + 1;
+        }
+
+        // 2. All completed entries to calculate stats
+        const habitIds = habits.map(h => h.id);
+        let entries: any[] = [];
+        if (habitIds.length > 0) {
+            const { inArray } = await import('drizzle-orm');
+            entries = await db.select().from(schema.habitEntries)
+                .where(and(
+                    inArray(schema.habitEntries.habitId, habitIds),
+                    eq(schema.habitEntries.status, 'completed')
+                ));
+        }
+
+        // Total Lifetime Completions
+        const totalCompletions = entries.length;
+
+        // Perfect Days (days where completed count >= total habits)
+        const entriesByDate: Record<string, number> = {};
+        for (const e of entries) {
+            entriesByDate[e.date] = (entriesByDate[e.date] || 0) + 1;
+        }
+        let perfectDays = 0;
+        const totalHabits = habits.length || 1;
+        for (const date in entriesByDate) {
+            if (entriesByDate[date] >= totalHabits) {
+                perfectDays++;
+            }
+        }
+
+        // Most active day of week (0-6, where 0 is Sunday)
+        const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0];
+        for (const e of entries) {
+            const d = new Date(e.date);
+            dayOfWeekCounts[d.getDay()]++;
+        }
+
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        let mostActiveDay = 'None';
+        let maxCount = 0;
+        dayOfWeekCounts.forEach((count, i) => {
+            if (count > maxCount) {
+                maxCount = count;
+                mostActiveDay = days[i];
+            }
+        });
+
+        return c.json({
+            categories,
+            totalCompletions,
+            perfectDays,
+            mostActiveDay,
+            dayOfWeekDistribution: dayOfWeekCounts
+        });
+
+    } catch (e: any) {
+        console.error('Stats Error:', e);
+        return c.json({ error: e.message || 'Internal Server Error' }, 500);
+    }
+});
+
 export default dashboard;

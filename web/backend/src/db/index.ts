@@ -7,7 +7,9 @@ const connectionString = process.env.DATABASE_URL || '';
 
 if (!connectionString) {
     console.error("❌ DATABASE_URL is not defined. Please set it in your .env or deployment settings.");
-    // In production, we might want to throw an error, but let's allow build steps to proceed if needed
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error("DATABASE_URL is missing in production environment");
+    }
 }
 
 // Disable prefetch as it is not supported for "Transaction" pool mode

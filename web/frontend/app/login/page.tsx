@@ -4,29 +4,40 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
 export default function LoginPage() {
-    const [email, setEmail] = useState("shaker@habitcircle.app");
-    const [password, setPassword] = useState("password");
+    const [isLogin, setIsLogin] = useState(true);
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
-    const handleLogin = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await api.login(email, password);
+            const res = isLogin
+                ? await api.login(email, password)
+                : await api.register(email, password, name);
+            
             localStorage.setItem("hc_token", res.token);
-            localStorage.setItem("hc_user", JSON.stringify(res.user));
-            // Save login reward for celebration toast
-            if (res.loginReward > 0) {
-                localStorage.setItem("hc_login_reward", JSON.stringify({
-                    xp: res.loginReward,
-                    streak: res.user.loginStreak,
-                }));
+            if (res.user) {
+                localStorage.setItem("hc_user", JSON.stringify(res.user));
+                if (res.loginReward && res.loginReward > 0) {
+                    localStorage.setItem("hc_login_reward", JSON.stringify({
+                        xp: res.loginReward,
+                        streak: res.user.loginStreak,
+                    }));
+                }
+            } else {
+                // For register response which might not return user immediately
+                // In a real app we'd fetch /api/auth/me here
+                router.push("/");
+                return;
             }
             router.push("/tasks");
         } catch (err) {
             const error = err as Error;
-            alert(error.message || "Login failed");
+            alert(error.message || (isLogin ? "Login failed" : "Registration failed"));
         } finally {
             setLoading(false);
         }
@@ -55,14 +66,36 @@ export default function LoginPage() {
 
             <div style={{ animation: "pageIn 0.6s cubic-bezier(0.16, 1, 0.3, 1)" }}>
                 <div className="login-logo">Rithmic</div>
-                <p style={{ color: "var(--text-secondary)", fontSize: 14, textAlign: "center" }}>
+                <p style={{ color: "var(--text-secondary)", fontSize: 14, textAlign: "center", marginBottom: 20 }}>
                     Build habits. Together.
                 </p>
 
-                <form className="login-form" onSubmit={handleLogin}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+                    <button 
+                        className={`hc-btn ${isLogin ? 'hc-btn-primary' : 'hc-btn-outline'}`} 
+                        style={{ flex: 1 }}
+                        onClick={() => setIsLogin(true)}>
+                        Log In
+                    </button>
+                    <button 
+                        className={`hc-btn ${!isLogin ? 'hc-btn-primary' : 'hc-btn-outline'}`} 
+                        style={{ flex: 1 }}
+                        onClick={() => setIsLogin(false)}>
+                        Sign Up
+                    </button>
+                </div>
+
+                <form className="login-form" onSubmit={handleSubmit}>
+                    {!isLogin && (
+                        <div>
+                            <label className="hc-label">Full Name</label>
+                            <input className="hc-input" type="text" placeholder="John Doe"
+                                value={name} onChange={(e) => setName(e.target.value)} required />
+                        </div>
+                    )}
                     <div>
                         <label className="hc-label">Email</label>
-                        <input className="hc-input" type="email" placeholder="you@example.com"
+                        <input className="hc-input" type="text" placeholder="you@example.com"
                             value={email} onChange={(e) => setEmail(e.target.value)} required />
                     </div>
                     <div>
@@ -70,15 +103,15 @@ export default function LoginPage() {
                         <input className="hc-input" type="password" placeholder="••••••••"
                             value={password} onChange={(e) => setPassword(e.target.value)} required />
                     </div>
-                    <button className="hc-btn hc-btn-primary hc-btn-full" type="submit" disabled={loading}>
-                        {loading ? "Logging in..." : "Log In"}
-                        {!loading && <span className="material-icons" style={{ fontSize: 18 }}>login</span>}
+                    <button className="hc-btn hc-btn-primary hc-btn-full" type="submit" disabled={loading} style={{ marginTop: 10 }}>
+                        {loading ? "Please wait..." : (isLogin ? "Log In" : "Create Account")}
+                        {!loading && <span className="material-icons" style={{ fontSize: 18 }}>{isLogin ? 'login' : 'person_add'}</span>}
                     </button>
                 </form>
 
                 <div style={{ textAlign: "center", margin: "20px 0", color: "var(--text-muted)", fontSize: 13 }}>or</div>
 
-                <button className="google-btn" onClick={handleLogin}>
+                <button className="google-btn" onClick={() => alert("Google Auth not configured")}>
                     <svg width="18" height="18" viewBox="0 0 24 24">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
                         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />

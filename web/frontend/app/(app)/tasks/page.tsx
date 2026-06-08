@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { getHabitCompleteQuote } from "@/lib/motivational";
 import { Habit, HabitEntry, HabitCompleteResponse } from "@/../shared/types";
+import { useToast } from "@/components/ToastProvider";
+import { ErrorState } from "@/components/ErrorState";
 
 const COLORS = ['#4ADE80', '#6CB4EE', '#CB6CE6', '#FFD93D', '#FF4D6A', '#FF9F43'];
 
@@ -14,15 +16,20 @@ export default function TasksPage() {
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState("");
     const [celebration, setCelebration] = useState<{ show: boolean; xp: number; quote: string; streak: number } | null>(null);
+    const [hasError, setHasError] = useState(false);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const router = useRouter();
+    const { showToast } = useToast();
 
     const loadData = useCallback(async () => {
         try {
+            setHasError(false);
             const [h, e] = await Promise.all([api.getHabits(), api.getEntries(selectedDate)]);
             setHabits(h);
             setEntries(e);
-        } catch { /* ignore */ }
+        } catch { 
+            setHasError(true);
+        }
     }, [selectedDate]);
 
     useEffect(() => { loadData(); }, [loadData]);
@@ -43,8 +50,13 @@ export default function TasksPage() {
     const getStatus = (habitId: string) => entries.find(e => e.habitId === habitId)?.status || "pending";
 
     const handleStart = async (id: string) => {
-        await api.startHabit(id);
-        loadData();
+        try {
+            await api.startHabit(id);
+            showToast("Habit started", "success");
+            loadData();
+        } catch {
+            showToast("Failed to start habit.", "error");
+        }
     };
 
     const handleComplete = async (id: string) => {
@@ -62,20 +74,33 @@ export default function TasksPage() {
             if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
             setTimeout(() => setCelebration(null), 3500);
             loadData();
-        } catch { loadData(); }
+        } catch { 
+            showToast("Failed to complete habit.", "error");
+            loadData(); 
+        }
     };
 
     const handleCreate = async () => {
         if (!newName.trim()) return;
-        await api.createHabit({ name: newName, category: "Custom" });
-        setNewName("");
-        setShowCreate(false);
-        loadData();
+        try {
+            await api.createHabit({ name: newName, category: "Custom" });
+            setNewName("");
+            setShowCreate(false);
+            showToast("Habit created successfully", "success");
+            loadData();
+        } catch {
+            showToast("Failed to create habit.", "error");
+        }
     };
 
     const handleDelete = async (id: string) => {
-        await api.deleteHabit(id);
-        loadData();
+        try {
+            await api.deleteHabit(id);
+            showToast("Habit deleted", "info");
+            loadData();
+        } catch {
+            showToast("Failed to delete habit.", "error");
+        }
     };
 
     // 🎉 Confetti Animation
@@ -133,6 +158,14 @@ export default function TasksPage() {
         d.setDate(d.getDate() - 3 + i);
         return { date: d.toISOString().split("T")[0], day: d.toLocaleDateString("en", { weekday: "short" }), num: d.getDate() };
     });
+
+    if (hasError) return (
+        <ErrorState 
+            title="Unable to Load Habits" 
+            message="We couldn't fetch your tasks. Please try again." 
+            onRetry={loadData} 
+        />
+    );
 
     return (
         <div className="page-scroll" style={{ paddingBottom: 120 }}>
@@ -192,7 +225,12 @@ export default function TasksPage() {
                             </div>
                             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                 {status === "pending" && (
-                                    <button className="btn-primary btn-sm" onClick={() => handleStart(habit.id)}>Start</button>
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                        <button className="btn-primary btn-sm" style={{ background: "var(--card-hover)", color: "var(--text)" }} onClick={() => router.push(`/focus/${habit.id}`)}>
+                                            🎯 Focus
+                                        </button>
+                                        <button className="btn-primary btn-sm" onClick={() => handleStart(habit.id)}>Start</button>
+                                    </div>
                                 )}
                                 {status === "in_progress" && (
                                     <button className="btn-primary btn-sm" style={{ background: "var(--success)" }} onClick={() => handleComplete(habit.id)}>

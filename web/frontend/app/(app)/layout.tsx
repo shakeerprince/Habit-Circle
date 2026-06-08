@@ -3,6 +3,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
+import { ToastProvider } from "@/components/ToastProvider";
+
 const tabs = [
     { path: "/tasks", icon: "checklist", label: "Tasks" },
     { path: "/friends", icon: "group", label: "Friends" },
@@ -73,7 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <>
+        <ToastProvider>
             {children}
 
             {/* PWA Install Banner */}
@@ -119,6 +121,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     </button>
                 ))}
             </nav>
-        </>
+        </ToastProvider>
     );
 }

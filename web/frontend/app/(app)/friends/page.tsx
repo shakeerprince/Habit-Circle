@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { User, FriendUser, FriendRequest } from "@/../shared/types";
+import { useToast } from "@/components/ToastProvider";
+import { ErrorState } from "@/components/ErrorState";
 
 export default function FriendsPage() {
     const [tab, setTab] = useState<"friends" | "requests" | "discover" | "sent">("discover");
@@ -12,11 +14,21 @@ export default function FriendsPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [searchResults, setSearchResults] = useState<FriendUser[]>([]);
     const [loading, setLoading] = useState(true);
+    const [hasError, setHasError] = useState(false);
     const router = useRouter();
+    const { showToast } = useToast();
 
     const loadFriends = useCallback(() => {
-        api.getFriends().then(setFriends).catch(() => { });
-        api.getFriendRequests().then(setRequests).catch(() => { });
+        setHasError(false);
+        Promise.all([
+            api.getFriends(),
+            api.getFriendRequests()
+        ]).then(([f, r]) => {
+            setFriends(f);
+            setRequests(r);
+        }).catch(() => {
+            setHasError(true);
+        });
     }, []);
 
     useEffect(() => {
@@ -37,14 +49,24 @@ export default function FriendsPage() {
     }, [searchQuery]);
 
     const handleAccept = async (id: string) => {
-        await api.acceptFriendRequest(id);
-        loadFriends();
-        api.getSuggestions().then(setSuggestions).catch(() => { });
+        try {
+            await api.acceptFriendRequest(id);
+            loadFriends();
+            api.getSuggestions().then(setSuggestions).catch(() => { });
+            showToast("Friend request accepted", "success");
+        } catch {
+            showToast("Failed to accept request.", "error");
+        }
     };
 
     const handleReject = async (id: string) => {
-        await api.rejectFriendRequest(id);
-        setRequests(r => r.filter(req => req.id !== id));
+        try {
+            await api.rejectFriendRequest(id);
+            setRequests(r => r.filter(req => req.id !== id));
+            showToast("Request rejected", "info");
+        } catch {
+            showToast("Failed to reject request.", "error");
+        }
     };
 
     const handleSendRequest = async (userId: string) => {
@@ -52,12 +74,20 @@ export default function FriendsPage() {
             await api.sendFriendRequest(userId);
             setSearchResults(r => r.map(u => u.id === userId ? { ...u, friendStatus: "pending" as const } : u));
             setSuggestions(s => s.map(u => u.id === userId ? { ...u, friendStatus: "pending" as const } : u));
-        } catch { }
+            showToast("Friend request sent", "success");
+        } catch { 
+            showToast("Failed to send request.", "error");
+        }
     };
 
     const handleRemove = async (friendId: string) => {
-        await api.removeFriend(friendId);
-        setFriends(f => f.filter(fr => fr.id !== friendId));
+        try {
+            await api.removeFriend(friendId);
+            setFriends(f => f.filter(fr => fr.id !== friendId));
+            showToast("Friend removed", "info");
+        } catch {
+            showToast("Failed to remove friend.", "error");
+        }
     };
 
     const levelColor = (level: number) => {
@@ -85,6 +115,14 @@ export default function FriendsPage() {
             </div>
             {action}
         </div>
+    );
+
+    if (hasError) return (
+        <ErrorState 
+            title="Friends Unavailable" 
+            message="We couldn't load your friends list. Please try again." 
+            onRetry={loadFriends} 
+        />
     );
 
     return (

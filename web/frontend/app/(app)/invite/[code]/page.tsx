@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-import { Community } from "../../../../../../shared/types";
+import { Community } from "@/../shared/types";
 
 export default function InviteJoinPage() {
     const { code } = useParams();

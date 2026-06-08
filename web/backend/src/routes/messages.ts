@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { db, schema } from '../db';
 import { eq, or, and, desc } from 'drizzle-orm';
+import { notifyUser } from '../websocket';
 
 const messages = new Hono();
 
@@ -57,27 +58,43 @@ messages.get('/:otherId', async (c) => {
         .set({ isRead: true })
         .where(and(eq(schema.directMessages.senderId, otherId), eq(schema.directMessages.recipientId, userId)));
 
-    return c.json(history);
+    const usersFound = await db.select().from(schema.users).where(eq(schema.users.id, otherId));
+    const user = usersFound[0];
+
+    return c.json({
+        otherUser: {
+            id: otherId,
+            name: user?.name || 'Unknown User',
+            bio: user?.bio || '',
+        },
+        messages: history
+    });
 });
 
-// POST /api/messages — send a DM
-messages.post('/', async (c) => {
+// POST /api/messages/:receiverId — send a DM
+messages.post('/:receiverId', async (c) => {
     const userId = c.get('userId' as never) as string;
-    const { receiverId, message } = await c.req.json();
+    const receiverId = c.req.param('receiverId');
+    const { message } = await c.req.json();
 
     if (!receiverId || !message) return c.json({ error: 'Receiver and message required' }, 400);
 
     const id = crypto.randomUUID();
-    await db.insert(schema.directMessages).values({
+    const newMsg = {
         id,
         senderId: userId,
         recipientId: receiverId,
         message,
         sentAt: new Date().toISOString(),
         isRead: false,
-    });
+    };
 
-    return c.json({ id, message: 'Message sent' }, 201);
+    await db.insert(schema.directMessages).values(newMsg);
+
+    // Broadcast via WebSockets to recipient
+    notifyUser(receiverId, 'new_dm', newMsg);
+
+    return c.json(newMsg, 201);
 });
 
 export default messages;

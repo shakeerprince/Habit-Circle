@@ -1,19 +1,25 @@
+// ═══════════════════════════════════════════════════════════════
+//  Rithmic — API Service Layer (React Native)
+//  Ported from web/frontend/lib/api.ts
+// ═══════════════════════════════════════════════════════════════
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     User, Habit, HabitEntry, Post, PostComment, Challenge,
-    ChatMessage, Notification, DashboardData, LeaderboardResponse, AuthResponse,
+    ChatMessage, Notification as AppNotification, DashboardData, LeaderboardResponse, AuthResponse,
     Community, UserProfile, DirectMessage, Conversation, DMHistory, FriendUser, FriendRequest,
-    HabitCompleteResponse, AdvancedStats
-} from '../../shared/types';
+    HabitCompleteResponse
+} from './types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+// TODO: Change this to your deployed API URL
+const API_BASE = 'https://rithmic.vercel.app';
 
-function getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('hc_token');
+async function getToken(): Promise<string | null> {
+    return AsyncStorage.getItem('hc_token');
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = getToken();
+    const token = await getToken();
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string> || {}),
@@ -34,10 +40,6 @@ export const api = {
         request<AuthResponse>('/api/auth/login', {
             method: 'POST', body: JSON.stringify({ email, password }),
         }),
-    register: (email: string, password: string, name?: string) =>
-        request<AuthResponse>('/api/auth/register', {
-            method: 'POST', body: JSON.stringify({ email, password, name }),
-        }),
 
     // Habits
     getHabits: () => request<Habit[]>('/api/habits'),
@@ -46,7 +48,6 @@ export const api = {
     startHabit: (id: string) => request<HabitEntry>(`/api/habits/${id}/start`, { method: 'POST' }),
     completeHabit: (id: string) => request<HabitCompleteResponse>(`/api/habits/${id}/complete`, { method: 'POST' }),
     getEntries: (date: string) => request<HabitEntry[]>(`/api/habits/entries?date=${date}`),
-    getHeatmap: () => request<Record<string, number>>('/api/habits/heatmap'),
 
     // Posts
     getPosts: (sort?: string) => request<Post[]>(`/api/posts?sort=${sort || 'hot'}`),
@@ -67,14 +68,13 @@ export const api = {
         request<ChatMessage>(`/api/challenges/${id}/chat`, { method: 'POST', body: JSON.stringify({ message }) }),
 
     // Notifications
-    getNotifications: () => request<Notification[]>('/api/notifications'),
+    getNotifications: () => request<AppNotification[]>('/api/notifications'),
     getUnreadCount: () => request<{ count: number }>('/api/notifications/unread-count'),
     markRead: (id: string) => request<{ success: boolean }>(`/api/notifications/${id}/read`, { method: 'POST' }),
     markAllRead: () => request<{ success: boolean }>('/api/notifications/read-all', { method: 'POST' }),
 
     // Dashboard
     getDashboard: () => request<DashboardData>('/api/dashboard'),
-    getStats: () => request<AdvancedStats>('/api/dashboard/stats'),
 
     // User Profiles
     getUserProfile: (id: string) => request<UserProfile>(`/api/users/${id}`),
@@ -110,18 +110,4 @@ export const api = {
     postInCommunity: (id: string, data: Partial<Post>) => request<Post>(`/api/communities/${id}/post`, { method: 'POST', body: JSON.stringify(data) }),
     getByInviteCode: (code: string) => request<Community>(`/api/communities/invite/${code}`),
     joinByInviteCode: (code: string) => request<{ message?: string; id?: string; error?: string }>(`/api/communities/invite/${code}/join`, { method: 'POST' }),
-
-    // File Upload
-    uploadFile: async (file: File) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        const token = typeof window !== 'undefined' ? localStorage.getItem('hc_token') : null;
-        const res = await fetch(`${API_BASE}/api/upload`, {
-            method: 'POST',
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            body: formData,
-        });
-        return res.json() as Promise<{ url: string }>;
-    },
 };
-

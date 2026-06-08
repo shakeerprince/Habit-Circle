@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { Community } from "@/../shared/types";
+import { useToast } from "@/components/ToastProvider";
+import { ErrorState } from "@/components/ErrorState";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const CATEGORIES = ["All", "Fitness", "Mindfulness", "Study", "Health", "General"];
@@ -22,12 +24,26 @@ export default function CommunitiesPage() {
     const [newBannerImage, setNewBannerImage] = useState<string | undefined>(undefined);
     const [uploadingBanner, setUploadingBanner] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [hasError, setHasError] = useState(false);
     const bannerFileRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
+    const { showToast } = useToast();
+
+    const loadData = () => {
+        setHasError(false);
+        Promise.all([
+            api.getCommunities(search || undefined),
+            api.getMyCommunities()
+        ]).then(([explore, my]) => {
+            setCommunities(explore);
+            setMyCommunities(my);
+        }).catch(() => {
+            setHasError(true);
+        });
+    };
 
     useEffect(() => {
-        api.getCommunities(search || undefined).then(setCommunities).catch(() => { });
-        api.getMyCommunities().then(setMyCommunities).catch(() => { });
+        loadData();
     }, [search]);
 
     const filtered = category === "All" ? communities : communities.filter((c: Community) => c.category === category);
@@ -37,7 +53,10 @@ export default function CommunitiesPage() {
             await api.joinCommunity(id);
             setCommunities((prev: Community[]) => prev.map((c: Community) => c.id === id ? { ...c, isJoined: true, memberCount: c.memberCount + 1 } : c));
             api.getMyCommunities().then(setMyCommunities).catch(() => { });
-        } catch { }
+            showToast("Joined community", "success");
+        } catch { 
+            showToast("Failed to join community.", "error");
+        }
     };
 
     const handleLeave = async (id: string) => {
@@ -45,7 +64,10 @@ export default function CommunitiesPage() {
             await api.leaveCommunity(id);
             setCommunities((prev: Community[]) => prev.map((c: Community) => c.id === id ? { ...c, isJoined: false, memberCount: c.memberCount - 1 } : c));
             setMyCommunities((prev: Community[]) => prev.filter((c: Community) => c.id !== id));
-        } catch { }
+            showToast("Left community", "info");
+        } catch { 
+            showToast("Failed to leave community.", "error");
+        }
     };
 
     const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,7 +77,10 @@ export default function CommunitiesPage() {
         try {
             const result = await api.uploadFile(file);
             setNewBannerImage(`${API_BASE}${result.url}`);
-        } catch { }
+            showToast("Banner uploaded", "success");
+        } catch { 
+            showToast("Failed to upload banner.", "error");
+        }
         setUploadingBanner(false);
     };
 
@@ -70,10 +95,21 @@ export default function CommunitiesPage() {
             })) as { id: string };
             setShowCreate(false);
             setNewName(""); setNewDesc(""); setNewBannerImage(undefined);
+            showToast("Community created!", "success");
             router.push(`/community/${result.id}`);
-        } catch { }
+        } catch { 
+            showToast("Failed to create community.", "error");
+        }
         setCreating(false);
     };
+
+    if (hasError) return (
+        <ErrorState 
+            title="Communities Unavailable" 
+            message="We couldn't load communities. Please try again." 
+            onRetry={loadData} 
+        />
+    );
 
     return (
         <div className="page" style={{ paddingBottom: 100 }}>

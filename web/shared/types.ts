@@ -240,3 +240,11 @@ export interface FriendRequest {
   updatedAt?: string;
   requester: User;
 }
+
+export interface AdvancedStats {
+  categories: Record<string, number>;
+  totalCompletions: number;
+  perfectDays: number;
+  mostActiveDay: string;
+  dayOfWeekDistribution: number[];
+}

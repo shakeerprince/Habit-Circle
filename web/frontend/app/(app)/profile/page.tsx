@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import ThemeToggle from "@/components/ThemeToggle";
+import { Heatmap } from "@/components/Heatmap";
 import { DashboardData, User, Badge } from "@/../shared/types";
 
 export default function ProfilePage() {
@@ -76,8 +77,18 @@ export default function ProfilePage() {
                 </div>
             )}
 
+            {/* Heatmap */}
+            <div style={{ marginBottom: 16 }}>
+                <Heatmap />
+            </div>
+
             {/* Badges */}
-            <div className="section-title" style={{ marginBottom: 8 }}>🏅 Badges</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div className="section-title" style={{ marginBottom: 0 }}>🏅 Badges</div>
+                <button className="btn-primary btn-sm" onClick={() => router.push("/achievements")}>
+                    View All
+                </button>
+            </div>
             <div className="hc-card" style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
                 {(data?.badges || []).map((b: Badge) => (
                     <div key={b.id} style={{ textAlign: "center", opacity: b.isEarned ? 1 : 0.3, padding: 8, borderRadius: 12, background: b.isEarned ? "var(--card-hover)" : "transparent", transition: "all 0.3s" }}>
@@ -88,6 +99,13 @@ export default function ProfilePage() {
                         {b.isEarned && <div style={{ fontSize: 9, color: "var(--success)", marginTop: 2 }}>Earned!</div>}
                     </div>
                 ))}
+            </div>
+
+            {/* Analytics Link */}
+            <div className="hc-card interactive" style={{ marginTop: 16, textAlign: "center", padding: 16 }} onClick={() => router.push("/stats")}>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>📊</div>
+                <div style={{ fontWeight: 700 }}>Detailed Analytics</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>View your XP history and habit breakdowns</div>
             </div>
 
             {/* Settings */}

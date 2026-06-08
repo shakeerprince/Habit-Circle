@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { createBunWebSocket } from 'hono/bun';
+import { addClient, removeClient, authenticateToken } from './websocket';
 
 import authRoutes from './routes/auth';
 import habitsRoutes from './routes/habits';
@@ -16,6 +18,9 @@ import communitiesRoutes from './routes/communities';
 import uploadsRoutes from './routes/uploads';
 import { authMiddleware } from './middleware/auth';
 
+const { upgradeWebSocket, websocket } = createBunWebSocket();
+export { websocket };
+
 const app = new Hono().basePath('/api');
 
 // ─── Middleware ────────────────────────────────────────
@@ -27,6 +32,26 @@ app.use('*', logger());
 
 // ─── Health Check ─────────────────────────────────────
 app.get('/', (c) => c.json({ status: 'ok', app: 'Rithmic API', version: '2.3.0' }));
+
+// ─── WebSocket ────────────────────────────────────────
+app.get('/ws', upgradeWebSocket((c) => {
+    const token = c.req.query('token');
+    let userId: string | null = null;
+    if (token) userId = authenticateToken(token);
+
+    return {
+        onOpen(_event, ws) {
+            if (userId) addClient(userId, ws);
+        },
+        onClose(_event, ws) {
+            if (userId) removeClient(userId, ws);
+        },
+        onMessage(event, ws) {
+            // Keep-alive or other client-to-server messages
+            if (event.data === 'ping') ws.send('pong');
+        }
+    };
+}));
 
 // ─── Public Routes ────────────────────────────────────
 app.route('/auth', authRoutes);

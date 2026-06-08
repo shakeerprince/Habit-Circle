@@ -3,6 +3,8 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { DashboardData, LeaderboardResponse, Habit } from "@/../shared/types";
+import { useToast } from "@/components/ToastProvider";
+import { ErrorState } from "@/components/ErrorState";
 
 function getGreeting() {
     const h = new Date().getHours();
@@ -15,14 +17,23 @@ function getGreeting() {
 export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [leaderboard, setLeaderboard] = useState<LeaderboardResponse | null>(null);
+    const [hasError, setHasError] = useState(false);
     const chartRef = useRef<HTMLCanvasElement>(null);
     const router = useRouter();
+    const { showToast } = useToast();
+
+    const fetchDashboardData = () => {
+        setHasError(false);
+        api.getDashboard()
+            .then(setData)
+            .catch(() => setHasError(true));
+        api.getLeaderboard()
+            .then(setLeaderboard)
+            .catch(() => { }); // Keep leaderboard failure silent as it's not critical
+    };
 
     useEffect(() => {
-        // Single unified call for dashboard data
-        api.getDashboard().then(setData).catch(() => { });
-        // Leaderboard remains separate as it's a heavy global query
-        api.getLeaderboard().then(setLeaderboard).catch(() => { });
+        fetchDashboardData();
     }, []);
 
     // Draw chart
@@ -74,7 +85,10 @@ export default function DashboardPage() {
                     habits: prev.habits.map((h: Habit) => h.id === id ? { ...h, status: "in_progress" as const } : h)
                 };
             });
-        } catch { }
+            showToast("Habit started", "success");
+        } catch { 
+            showToast("Failed to start habit. Please try again.", "error");
+        }
     };
 
     const handleCompleteHabit = async (id: string) => {
@@ -89,8 +103,19 @@ export default function DashboardPage() {
                     momentumScore: Math.min(100, (prev.momentumScore || 0) + 1), // visual feedback
                 };
             });
-        } catch { }
+            showToast("Habit completed! +1 Momentum", "success");
+        } catch { 
+            showToast("Failed to complete habit.", "error");
+        }
     };
+
+    if (hasError) return (
+        <ErrorState 
+            title="Dashboard Unavailable" 
+            message="We couldn't load your dashboard data." 
+            onRetry={fetchDashboardData} 
+        />
+    );
 
     if (!data) return (
         <div className="page-scroll" style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
@@ -458,7 +483,13 @@ export default function DashboardPage() {
                 )}
 
                 {/* ═══════ Badges ═══════ */}
-                <h2 style={{ fontFamily: "var(--font-heading)", fontWeight: 800, fontSize: 16, margin: "0 0 10px" }}>🏅 Badges</h2>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <h2 style={{ fontFamily: "var(--font-heading)", fontWeight: 800, fontSize: 16, margin: 0 }}>🏅 Badges</h2>
+                    <button onClick={() => router.push("/achievements")} style={{
+                        background: "none", border: "none", color: "var(--accent)", fontSize: 12,
+                        fontWeight: 600, cursor: "pointer",
+                    }}>See all →</button>
+                </div>
                 <div className="hc-card" style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center", marginBottom: 16 }}>
                     {(data.badges || []).map((b) => (
                         <div key={b.id} style={{
