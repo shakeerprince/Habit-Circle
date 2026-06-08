@@ -27,7 +27,12 @@ posts.get('/', async (c) => {
         .leftJoin(schema.users, eq(schema.posts.authorId, schema.users.id))
         .orderBy(desc(schema.posts.createdAt));
 
-    return c.json(rows);
+    const userVotes = await db.select().from(schema.postVotes).where(eq(schema.postVotes.userId, userId));
+    const voteMap = new Map(userVotes.map(v => [v.postId, v.direction]));
+
+    const result = rows.map(r => ({ ...r, userVote: voteMap.get(r.id) || 0 }));
+
+    return c.json(result);
 });
 
 // POST /api/posts
@@ -52,11 +57,16 @@ posts.post('/', async (c) => {
 
 // GET /api/posts/:id
 posts.get('/:id', async (c) => {
+    const userId = c.get('userId' as never) as string;
     const id = c.req.param('id');
     const postsFound = await db.select().from(schema.posts).where(eq(schema.posts.id, id));
     const post = postsFound[0];
     if (!post) return c.json({ error: 'Post not found' }, 404);
-    return c.json(post);
+
+    const votes = await db.select().from(schema.postVotes).where(and(eq(schema.postVotes.postId, id), eq(schema.postVotes.userId, userId)));
+    const userVote = votes[0]?.direction || 0;
+
+    return c.json({ ...post, userVote });
 });
 
 // POST /api/posts/:id/vote
@@ -69,20 +79,52 @@ posts.post('/:id/vote', async (c) => {
     const post = postsFound[0];
     if (!post) return c.json({ error: 'Post not found' }, 404);
 
-    if (direction === 1) {
-        await db.update(schema.posts).set({ upvotes: post.upvotes + 1 }).where(eq(schema.posts.id, postId));
+    const votesFound = await db.select().from(schema.postVotes)
+        .where(and(eq(schema.postVotes.postId, postId), eq(schema.postVotes.userId, userId)));
+    const existingVote = votesFound[0];
 
-        // Notify author
+    const currentDir = existingVote ? existingVote.direction : 0;
+    if (currentDir === direction) {
+        return c.json({ upvotes: post.upvotes, downvotes: post.downvotes, userVote: direction });
+    }
+
+    let newUpvotes = post.upvotes;
+    let newDownvotes = post.downvotes;
+
+    if (currentDir === 1) newUpvotes--;
+    if (currentDir === -1) newDownvotes--;
+
+    if (direction === 1) newUpvotes++;
+    if (direction === -1) newDownvotes++;
+
+    await db.update(schema.posts)
+        .set({ upvotes: newUpvotes, downvotes: newDownvotes })
+        .where(eq(schema.posts.id, postId));
+
+    if (direction === 0) {
+        if (existingVote) await db.delete(schema.postVotes).where(eq(schema.postVotes.id, existingVote.id));
+    } else {
+        if (existingVote) {
+            await db.update(schema.postVotes).set({ direction }).where(eq(schema.postVotes.id, existingVote.id));
+        } else {
+            await db.insert(schema.postVotes).values({
+                id: crypto.randomUUID(),
+                postId,
+                userId,
+                direction
+            });
+        }
+    }
+
+    if (direction === 1 && currentDir !== 1) {
         const usersFound = await db.select().from(schema.users).where(eq(schema.users.id, userId));
         const voter = usersFound[0];
         if (voter && post.authorId !== userId) {
             notifyUpvote(post.authorId, voter.name, post.title);
         }
-    } else if (direction === -1) {
-        await db.update(schema.posts).set({ downvotes: post.downvotes + 1 }).where(eq(schema.posts.id, postId));
     }
 
-    return c.json({ success: true });
+    return c.json({ upvotes: newUpvotes, downvotes: newDownvotes, userVote: direction });
 });
 
 // GET /api/posts/:id/comments

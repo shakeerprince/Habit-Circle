@@ -2,19 +2,26 @@ import { Hono } from 'hono';
 import { Context, Next } from 'hono';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'rithmic-dev-secret-2024';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error("❌ JWT_SECRET is not defined.");
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error("JWT_SECRET is missing in production environment");
+    }
+}
+const SECRET = JWT_SECRET || 'rithmic-dev-secret-2024';
 
 export interface AuthContext {
     userId: string;
 }
 
 export function generateToken(userId: string): string {
-    return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '7d' });
+    return jwt.sign({ userId }, SECRET, { expiresIn: '7d' });
 }
 
 export function verifyToken(token: string): AuthContext | null {
     try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
+        const decoded = jwt.verify(token, SECRET) as any;
         return { userId: decoded.userId };
     } catch {
         return null;

@@ -3,35 +3,68 @@ import { db, schema } from '../db';
 import { eq } from 'drizzle-orm';
 import { generateToken } from '../middleware/auth';
 import { awardXP, XP_REWARDS, calculateLevel } from '../lib/xp';
+import bcrypt from 'bcryptjs';
 
 const auth = new Hono();
+
+// POST /api/auth/register
+auth.post('/register', async (c) => {
+    const { email, password, name } = await c.req.json();
+
+    if (!email || !password) {
+        return c.json({ error: 'Email and password are required' }, 400);
+    }
+
+    const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, email));
+    if (existingUser.length > 0) {
+        return c.json({ error: 'Email already registered' }, 400);
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const id = `u_${Date.now()}`;
+    const defaultName = name || email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+
+    await db.insert(schema.users).values({
+        id,
+        name: defaultName,
+        email,
+        passwordHash,
+        bio: 'New to Rithmic! 🌟',
+        createdAt: new Date().toISOString(),
+    });
+
+    const token = generateToken(id);
+    return c.json({ token, message: 'Registration successful' }, 201);
+});
 
 // POST /api/auth/login
 auth.post('/login', async (c) => {
     const { email, password } = await c.req.json();
 
-    if (!email) {
-        return c.json({ error: 'Email is required' }, 400);
+    if (!email || !password) {
+        return c.json({ error: 'Email and password are required' }, 400);
     }
 
     // Find user by email
     const usersList = await db.select().from(schema.users).where(eq(schema.users.email, email));
     let user = usersList[0];
 
-    // If no user, auto-create (demo mode)
     if (!user) {
-        const name = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-        const id = `u_${Date.now()}`;
-        await db.insert(schema.users).values({
-            id,
-            name,
-            email,
-            passwordHash: 'demo',
-            bio: 'New to Rithmic! 🌟',
-            createdAt: new Date().toISOString(),
-        });
-        const createdUsers = await db.select().from(schema.users).where(eq(schema.users.id, id));
-        user = createdUsers[0]!;
+        return c.json({ error: 'Invalid email or password' }, 401);
+    }
+
+    // Verify password (existing users with "demo" password won't be hashed yet)
+    let isMatch = false;
+    if (user.passwordHash.startsWith('$2') || user.passwordHash.startsWith('$argon2id')) {
+        // Hashed password (bcrypt or argon2)
+        isMatch = await bcrypt.compare(password, user.passwordHash);
+    } else {
+        // Fallback for old demo accounts with plain-text passwords
+        isMatch = password === user.passwordHash;
+    }
+
+    if (!isMatch) {
+        return c.json({ error: 'Invalid email or password' }, 401);
     }
 
     // ─── Daily Login Streak ──────────────────────────────────

@@ -3,6 +3,7 @@ import { db, schema } from '../db';
 import { eq } from 'drizzle-orm';
 import { generateToken } from '../middleware/auth';
 import { awardXP, XP_REWARDS, calculateLevel } from '../lib/xp';
+import bcrypt from 'bcryptjs';
 
 const auth = new Hono();
 
@@ -19,7 +20,7 @@ auth.post('/register', async (c) => {
         return c.json({ error: 'Email already registered' }, 400);
     }
 
-    const passwordHash = await Bun.password.hash(password);
+    const passwordHash = await bcrypt.hash(password, 10);
     const id = `u_${Date.now()}`;
     const defaultName = name || email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
 
@@ -54,11 +55,11 @@ auth.post('/login', async (c) => {
 
     // Verify password (existing users with "demo" password won't be hashed yet)
     let isMatch = false;
-    if (user.passwordHash.startsWith('$argon2id') || user.passwordHash.startsWith('$2')) {
-        // Hashed password
-        isMatch = await Bun.password.verify(password, user.passwordHash);
+    if (user.passwordHash.startsWith('$2') || user.passwordHash.startsWith('$argon2id')) {
+        // Hashed password (bcrypt or argon2)
+        isMatch = await bcrypt.compare(password, user.passwordHash);
     } else {
-        // Fallback for old demo accounts
+        // Fallback for old demo accounts with plain-text passwords
         isMatch = password === user.passwordHash;
     }
 
